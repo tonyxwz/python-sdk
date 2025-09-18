@@ -51,6 +51,9 @@ class StreamableHTTPSessionManager:
         json_response: Whether to use JSON responses instead of SSE streams
         stateless: If True, creates a completely fresh transport for each request
                    with no session tracking or state persistence between requests.
+        single_tenant: If True, only one transport will be created to process the entire
+                    every request, regardless of the MCP session id. This is useful for
+                    hosting platforms where the MCP server is launched in a single-tenant box.
     """
 
     def __init__(
@@ -59,12 +62,18 @@ class StreamableHTTPSessionManager:
         event_store: EventStore | None = None,
         json_response: bool = False,
         stateless: bool = False,
+        single_tenant: bool = False,
         security_settings: TransportSecuritySettings | None = None,
     ):
         self.app = app
         self.event_store = event_store
         self.json_response = json_response
         self.stateless = stateless
+        self.single_tenant = single_tenant
+        if self.stateless and self.single_tenant:
+            # A single-tenant server must be stateful, but stateful server does not
+            # have to be single tenant.
+            raise ValueError("A single-tenant server must stateful.")
         self.security_settings = security_settings
 
         # Session tracking (only used if not stateless)
@@ -208,6 +217,19 @@ class StreamableHTTPSessionManager:
         """
         request = Request(scope, receive)
         request_mcp_session_id = request.headers.get(MCP_SESSION_ID_HEADER)
+
+        if self.single_tenant and self._server_instances:
+            # being single_tenant means that there is only one ASGI server for the entire application.
+            # that server is used to process all the mcp requests because the hosting platform
+            # is already distributing the request to the box where the single-tenant mcp server runs.
+            assert len(self._server_instances) == 1
+            # hosting platforms might exposes a different mcp session ID hence
+            # we take the first key of server instances as the mcp session id
+            request_mcp_session_id = next(iter(self._server_instances.keys()))
+            headers = dict(scope["headers"])
+            # Also need to reset the incoming request mcp session id to this existing session id
+            headers[MCP_SESSION_ID_HEADER.encode("latin-1")] = request_mcp_session_id.encode("latin-1")
+            scope["headers"] = list(headers.items())
 
         # Existing session case
         if request_mcp_session_id is not None and request_mcp_session_id in self._server_instances:

@@ -84,6 +84,8 @@ class Settings(BaseSettings, Generic[LifespanResultT]):
     json_response: bool
     stateless_http: bool
     """Define if the server should create a new transport per request."""
+    single_tenant: bool
+    """Define if the server should use only one transport for all requests."""
 
     # resource settings
     warn_on_duplicate_resources: bool
@@ -139,6 +141,7 @@ class FastMCP(Generic[LifespanResultT]):
         streamable_http_path: str = "/mcp",
         json_response: bool = False,
         stateless_http: bool = False,
+        single_tenant: bool = False,
         warn_on_duplicate_resources: bool = True,
         warn_on_duplicate_tools: bool = True,
         warn_on_duplicate_prompts: bool = True,
@@ -158,6 +161,7 @@ class FastMCP(Generic[LifespanResultT]):
             streamable_http_path=streamable_http_path,
             json_response=json_response,
             stateless_http=stateless_http,
+            single_tenant=single_tenant,
             warn_on_duplicate_resources=warn_on_duplicate_resources,
             warn_on_duplicate_tools=warn_on_duplicate_tools,
             warn_on_duplicate_prompts=warn_on_duplicate_prompts,
@@ -868,6 +872,7 @@ class FastMCP(Generic[LifespanResultT]):
                 event_store=self._event_store,
                 json_response=self.settings.json_response,
                 stateless=self.settings.stateless_http,  # Use the stateless setting
+                single_tenant=self.settings.single_tenant,
                 security_settings=self.settings.transport_security,
             )
 
