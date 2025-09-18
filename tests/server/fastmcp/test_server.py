@@ -1283,21 +1283,40 @@ class TestServerPrompts:
             with pytest.raises(McpError, match="Missing required arguments"):
                 await client.get_prompt("prompt_fn")
 
+    def test_single_tenant_default_false(self):
+        """Test that single_tenant defaults to False."""
+        mcp = FastMCP("test")
+        assert mcp.settings.single_tenant is False
 
-def test_streamable_http_no_redirect() -> None:
-    """Test that streamable HTTP routes are correctly configured."""
-    mcp = FastMCP()
-    app = mcp.streamable_http_app()
+    def test_single_tenant_can_be_set_true(self):
+        """Test that single_tenant can be set to True."""
+        mcp = FastMCP("test", single_tenant=True)
+        assert mcp.settings.single_tenant is True
 
-    # Find routes by type - streamable_http_app creates Route objects, not Mount objects
-    streamable_routes = [
-        r
-        for r in app.routes
-        if isinstance(r, Route) and hasattr(r, "path") and r.path == mcp.settings.streamable_http_path
-    ]
+    def test_single_tenant_passed_to_session_manager(self):
+        """Test that single_tenant is passed to StreamableHTTPSessionManager."""
+        mcp = FastMCP("test", single_tenant=True)
 
-    # Verify routes exist
-    assert len(streamable_routes) == 1, "Should have one streamable route"
+        # Access the session manager to trigger its creation
+        # We need to call streamable_http_app() first to initialize the session manager
+        mcp.streamable_http_app()
+        session_manager = mcp.session_manager
+        assert session_manager.single_tenant is True
 
-    # Verify path values
-    assert streamable_routes[0].path == "/mcp", "Streamable route path should be /mcp"
+    def test_streamable_http_no_redirect(self) -> None:
+        """Test that streamable HTTP routes are correctly configured."""
+        mcp = FastMCP()
+        app = mcp.streamable_http_app()
+
+        # Find routes by type - streamable_http_app creates Route objects, not Mount objects
+        streamable_routes = [
+            r
+            for r in app.routes
+            if isinstance(r, Route) and hasattr(r, "path") and r.path == mcp.settings.streamable_http_path
+        ]
+
+        # Verify routes exist
+        assert len(streamable_routes) == 1, "Should have one streamable route"
+
+        # Verify path values
+        assert streamable_routes[0].path == "/mcp", "Streamable route path should be /mcp"

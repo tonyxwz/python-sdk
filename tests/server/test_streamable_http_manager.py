@@ -5,12 +5,71 @@ from unittest.mock import AsyncMock, patch
 
 import anyio
 import pytest
-from starlette.types import Message
+from starlette.requests import Request
+from starlette.types import Message, Scope
 
 from mcp.server import streamable_http_manager
 from mcp.server.lowlevel import Server
 from mcp.server.streamable_http import MCP_SESSION_ID_HEADER, StreamableHTTPServerTransport
 from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+
+
+def test_single_tenant_validation():
+    """Test that single_tenant=True with stateless=True raises ValueError."""
+    app = Server("test")
+
+    with pytest.raises(ValueError, match="A single-tenant server must stateful"):
+        StreamableHTTPSessionManager(app=app, single_tenant=True, stateless=True)
+
+
+def test_single_tenant_default_false():
+    """Test that single_tenant defaults to False."""
+    app = Server("test")
+    manager = StreamableHTTPSessionManager(app=app)
+    assert manager.single_tenant is False
+
+
+def test_single_tenant_can_be_set_true():
+    """Test that single_tenant can be set to True."""
+    app = Server("test")
+    manager = StreamableHTTPSessionManager(app=app, single_tenant=True)
+    assert manager.single_tenant is True
+
+
+@pytest.mark.anyio
+async def test_single_tenant_reuses_existing_session():
+    """Test that single_tenant mode reuses existing session."""
+    app = Server("test")
+    manager = StreamableHTTPSessionManager(app=app, single_tenant=True)
+
+    mock_mcp_run = AsyncMock(return_value=None)
+    # This will be called by StreamableHTTPSessionManager's run_server -> self.app.run
+    app.run = mock_mcp_run
+
+    # Manually add a session to simulate existing session
+    existing_session_id = "existing-session-123"
+    mock_transport = AsyncMock()
+    manager._server_instances[existing_session_id] = mock_transport
+
+    # Create a request with different session ID
+    request_mcp_session_id = "different-session-id"
+    scope: Scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/mcp",
+        "headers": [
+            (b"content-type", b"application/json"),
+            (MCP_SESSION_ID_HEADER.encode("latin-1"), request_mcp_session_id.encode("latin-1")),
+        ],
+    }
+
+    async with manager.run():
+        await manager.handle_request(scope, AsyncMock(), AsyncMock())
+        headers = Request(scope).headers
+        modified_session_id = headers[MCP_SESSION_ID_HEADER]
+
+        assert modified_session_id == existing_session_id
+        assert len(manager._server_instances) == 1
 
 
 @pytest.mark.anyio
